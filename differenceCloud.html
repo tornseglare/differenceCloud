@@ -1,0 +1,296 @@
+<html>
+<body>
+<style>
+#hamsterwheel{
+  background: black;
+}
+</style>
+<canvas id="hamsterwheel"></canvas>
+<script>
+  // Logiken kan du snegla på i province_classes.php, GenerateDifferenceCloud() om du har lust.
+  
+  class Map
+  {
+    constructor(side, maxDiff, corner, parent) 
+    {
+      this.side = side;
+      this.maxDiff = maxDiff;
+      this.corner = corner;
+      this.parentSide = 0;
+      this.parent = parent;
+      this.children = new Array();
+     
+      this.visSide = 1200;
+      
+      this.parentHeight = 0;
+     
+      if(parent != null)
+      {
+        this.parentSide = parent.side;
+        this.visSide = parent.visSide / 2;
+      }
+      else
+      {
+        // Första har ingen parent.
+        this.parentHeight = 128;
+      }
+
+      this.currentChildBeingCreated = 0;
+      this.currentCornerOfChild = "tl";
+      this.allChildrensChildrenCreated = false;
+
+      // tl | tr
+      // -------
+      // bl | br
+      // 
+      switch(this.corner)
+      {
+        case "tl":
+          this.parentOffsetX = 0;
+          this.parentOffsetY = 0;
+          break;
+        case "tr":
+          this.parentOffsetX = Math.floor(this.parentSide / 2);
+          this.parentOffsetY = 0;
+          break;
+        case "bl":
+          this.parentOffsetX = 0;
+          this.parentOffsetY = Math.floor(this.parentSide / 2);
+          break;
+        case "br":
+          this.parentOffsetX = Math.floor(this.parentSide / 2);
+          this.parentOffsetY = Math.floor(this.parentSide / 2);
+          break;
+        default:
+          this.parentOffsetX = 0;
+          this.parentOffsetY = 0;
+          break;
+      }
+     
+      this.makeMap();
+    }
+    
+    makeChild(corner)
+    {
+      this.children.push(new Map(this.side, this.maxDiff * diminisher, corner, this));
+    }
+    
+    childrenMakeChildren(depth)
+    {
+      if(depth <= 0)
+        return;
+      
+      // Alla måste vara skapade.
+      if(this.children.length == 4)
+      {
+        if(this.allChildrensChildrenCreated == true)
+        {
+          // Vi har redan skapat alla barnen här. Låt barnen skapa sina barn.
+          if(this.currentChildBeingCreated >= 4)
+            this.currentChildBeingCreated = 0;
+          
+          this.children[this.currentChildBeingCreated].childrenMakeChildren(depth-1);
+          this.currentChildBeingCreated++;
+        }
+        else
+        {
+          var child = this.children[this.currentChildBeingCreated];
+          
+          // Skapa ett i taget! 
+          switch(this.currentCornerOfChild)
+          {
+            case "tl":
+              child.makeChild(this.currentCornerOfChild);
+              this.currentCornerOfChild = "tr";
+              break;
+            case "tr":
+              child.makeChild(this.currentCornerOfChild);
+              this.currentCornerOfChild = "bl";
+              break;
+            case "bl":
+              child.makeChild(this.currentCornerOfChild);
+              this.currentCornerOfChild = "br";
+              break;
+            case "br":
+              child.makeChild(this.currentCornerOfChild);
+              this.currentCornerOfChild = "tl";
+              
+              // Hoppa till nästa unge.
+              this.currentChildBeingCreated++;
+              break;
+          }
+          
+          if(this.currentChildBeingCreated >= 4)
+            this.allChildrensChildrenCreated = true;
+        }
+      }
+    }
+    
+    makeMap()
+    {
+      this.map = new Array(this.side);
+      for(var x=0;x<this.side;x++)
+      {
+        this.map[x] = new Array(this.side);
+        
+        for(var y=0;y<this.side;y++)
+        {
+          var modifier = Math.random() * this.maxDiff - this.maxDiff / 2;
+          
+          if(this.parent != null)
+          {
+            // Det finns en parent. Eftersom this utgör en fjärdedel av parent, tex top-left-biten,
+            // OCH vår x,y är dubbelt så stor som parent, så måste vi dela med 4.
+            this.parentHeight = this.parent.map[this.parentOffsetX + Math.floor(x / 4)][this.parentOffsetY + Math.floor(y / 4)].height;
+            
+            // TODO: Den ska hämta in 9 grannar och ta genomsnittet! Annars softar den inte ut kartan ordentligt.
+            // Det du inte gjorde i den gamla versionen var att vikta tex. mittenpixeln för att bevara en del av
+            // "kantigheten" om det nu skulle vara intressant.
+            // ..det trista med nuvarande implementation är att den inte kan softa mellan Map-klasser utan vidare, 
+            // det suger att behöva fråga super-parent till de parents som inte ligger i samma super-parent.
+            
+          }
+          else
+          {
+            // Konstruktorn gör detta.
+          }
+          
+          this.map[x][y] = {height: modifier + this.parentHeight};
+        }
+      }
+    }
+    
+    draw(offsetX, offsetY)
+    {
+      var side = this.visSide / this.side;
+      var alpha = "1.0";
+
+      for(var x=0;x<this.side;x++)
+      {
+        for(var y=0;y<this.side;y++)
+        {
+          var height = Math.floor(this.map[x][y].height);
+          if(height > 255)
+            height = 255;
+                    
+          drawSquare(
+            offsetX + x * (side), 
+            offsetY + y * (side),
+            side,
+            "rgb("+height+","+height+","+height+","+alpha+")");
+        }
+      }
+      
+      if(this.children.length > 0)
+        this.drawChild(this.children[0], "tl", offsetX, offsetY);
+      if(this.children.length > 1)
+        this.drawChild(this.children[1], "tr", offsetX, offsetY);
+      if(this.children.length > 2)
+        this.drawChild(this.children[2], "bl", offsetX, offsetY);
+      if(this.children.length > 3)
+        this.drawChild(this.children[3], "br", offsetX, offsetY);
+    }
+    
+    drawChild(child, corner, offsetX, offsetY)
+    {
+      var x = 0;
+      var y = 0;
+      switch(corner)
+      {
+        case "tl":
+          break;
+        case "tr":
+          x = child.visSide;
+          break;
+        case "bl":
+          y = child.visSide;
+          break;
+        case "br":
+          x = child.visSide;
+          y = child.visSide;
+          break;
+      }
+      
+      child.draw(offsetX + x,offsetY + y);
+    }
+  }
+  
+  var squareSide = 8 * 2;
+  var offset = 10;
+
+  var Now = 0;
+  var LastDraw = 0;
+  var ElapsedTime = 0;
+  var fps = 25;
+  var fpsInterval = 1000 / fps; // milliseconds.
+
+  var c = document.getElementById("hamsterwheel");
+  c.width = 1600;
+  c.height = 1200;
+  ctx = c.getContext("2d");
+    
+  var startMaxDiff = 128; // 128+64+32+16+8+4+2+1 < 255, då den halveras för varje nivå av barn. (men se nedan)
+  var diminisher = 0.8;   // Hur mycket maxdiffen minskar med för varje nivå.
+  var topMap = new Map(2, startMaxDiff, "", null);
+  
+  // Endast till för att skapa skroten efterhand, en Map per loop. 
+  var childCreationCorner = "tl";
+    
+  function drawSquare(x, y, side, borderColor)
+  {
+    ctx.fillStyle=borderColor; 
+    ctx.fillRect(offset + x,offset + y,side,side);
+  }
+  
+  function gameLoop()
+  {
+    Now = Date.now();
+    ElapsedTime = Now - LastDraw;
+
+    if (ElapsedTime >= fpsInterval)
+    {
+      // Enough time has passed, time to update and draw.
+      LastDraw = Now;
+      
+      switch(childCreationCorner)
+      {
+        case "tl":
+          topMap.makeChild(childCreationCorner);
+          childCreationCorner = "tr";
+          break;
+        case "tr":
+          topMap.makeChild(childCreationCorner);
+          childCreationCorner = "bl";
+          break;
+        case "bl":
+          topMap.makeChild(childCreationCorner);
+          childCreationCorner = "br";
+          break;
+        case "br":
+          topMap.makeChild(childCreationCorner);
+          childCreationCorner = "tl";
+          
+          // Tufft, nu har vi skapat alla barnen för topMap!
+          console.log(topMap);
+          
+          childCreationCorner = "keep making children!";
+          break;
+        default:
+          topMap.childrenMakeChildren(5);
+          break;
+      }
+      
+      ctx.fillStyle="black"; 
+      ctx.fillRect(0,0,c.width,c.height);
+
+      topMap.draw(0,0);
+    }
+    
+    // Always keep asking for the next animation frame.
+    window.requestAnimationFrame(gameLoop);    
+  }
+  
+  gameLoop();  
+</script>
+</body>
+</html>
