@@ -27,7 +27,7 @@
       if(parent != null)
       {
         this.parentSide = parent.side;
-        this.visSide = parent.visSide / 2;
+        this.visSide = Math.floor(parent.visSide / 2);
       }
       else
       {
@@ -141,14 +141,12 @@
           {
             // Det finns en parent. Eftersom this utgör en fjärdedel av parent, tex top-left-biten,
             // OCH vår x,y är dubbelt så stor som parent, så måste vi dela med 4.
-            this.parentHeight = this.parent.map[this.parentOffsetX + Math.floor(x / 4)][this.parentOffsetY + Math.floor(y / 4)].height;
+            /*this.parentHeight = this.parent.map
+                [this.parentOffsetX + Math.floor(x / 4)]
+                [this.parentOffsetY + Math.floor(y / 4)].height;
+            */
             
-            // TODO: Den ska hämta in 9 grannar och ta genomsnittet! Annars softar den inte ut kartan ordentligt.
-            // Det du inte gjorde i den gamla versionen var att vikta tex. mittenpixeln för att bevara en del av
-            // "kantigheten" om det nu skulle vara intressant.
-            // ..det trista med nuvarande implementation är att den inte kan softa mellan Map-klasser utan vidare, 
-            // det suger att behöva fråga super-parent till de parents som inte ligger i samma super-parent.
-            
+            this.parentHeight = this.parent.getHeightAverage(1);
           }
           else
           {
@@ -160,35 +158,95 @@
       }
     }
     
+    getHeightAverage(depth)
+    {
+      var arr = new Array();
+      
+      //arr.push(this.map[x][y].height);
+
+      // Eftersom kartan är 2x2, så MÅSTE vi hämta in våra grannar med. 
+      // Eftersom min php-implementation använde sig av bitmappar så var det ju bara att plocka ut pixelvärdena
+      // och wrappa runt när man kom utanför nån sida. Sidoeffekten blev att bilden alignade fint med sig själv. :)
+      // ..så en senare version får basera sig på bilder igen. 
+      
+      // Det här fulhacket smoothar bara mellan de fyra rutorn på this map.
+      var sum = this.map[0][0].height + this.map[0][1].height + this.map[1][0].height + this.map[1][1].height;
+      var count = 4;
+      
+      if(this.parent != null && depth > 0)
+      {
+        // Vi kan få in två rutors höjdvärde till från grannen med lite hackande här.
+        // Det blir fel, eftersom vi tar grannens fyra rutor och gör ett genomsnitt, men kan ju vara värt ett försök.
+        // Ännu mer fel eftersom vi inte alls tar hänsyn till den x,y pixel som vi faktiskt vill hämta genomsnitt för,
+        // men det här får duga så länge.
+        // 
+        if(this.corner == "tl")
+        {
+          // tr child e närmast.
+          sum += this.parent.children[1].getHeightAverage(0);
+          count += 2;
+        }
+        else if(this.corner == "tr")
+        {
+          // tl child e närmast.
+          sum += this.parent.children[0].getHeightAverage(0);
+          count += 2;
+        }
+        else if(this.corner == "bl")
+        {
+          // br child e närmast.
+          sum += this.parent.children[3].getHeightAverage(0);
+          count += 2;
+        }
+        else if(this.corner == "br")
+        {
+          // bl child e närmast.
+          sum += this.parent.children[2].getHeightAverage(0);
+          count += 2;
+        }
+        
+      }
+
+      sum /= count;
+      
+      return sum;
+    }
+    
     draw(offsetX, offsetY)
     {
-      var side = this.visSide / this.side;
-      var alpha = "1.0";
-
-      for(var x=0;x<this.side;x++)
+      if(this.children.length < 4)
       {
-        for(var y=0;y<this.side;y++)
+        // Rita this-karta så länge inte alla barnen är skapade.
+        var side = Math.floor(this.visSide / this.side) + 1;
+        var alpha = "1.0";
+
+        for(var x=0;x<this.side;x++)
         {
-          var height = Math.floor(this.map[x][y].height);
-          if(height > 255)
-            height = 255;
-                    
-          drawSquare(
-            offsetX + x * (side), 
-            offsetY + y * (side),
-            side,
-            "rgb("+height+","+height+","+height+","+alpha+")");
+          for(var y=0;y<this.side;y++)
+          {
+            var height = Math.floor(this.map[x][y].height);
+            if(height > 255)
+              height = 255;
+                      
+            drawSquare(
+              offsetX + x * (side), 
+              offsetY + y * (side),
+              side,
+              "rgb("+height+","+height+","+height+","+alpha+")");
+          }
         }
       }
-      
-      if(this.children.length > 0)
-        this.drawChild(this.children[0], "tl", offsetX, offsetY);
-      if(this.children.length > 1)
-        this.drawChild(this.children[1], "tr", offsetX, offsetY);
-      if(this.children.length > 2)
-        this.drawChild(this.children[2], "bl", offsetX, offsetY);
-      if(this.children.length > 3)
-        this.drawChild(this.children[3], "br", offsetX, offsetY);
+
+      {
+        if(this.children.length > 0)
+          this.drawChild(this.children[0], "tl", offsetX, offsetY);
+        if(this.children.length > 1)
+          this.drawChild(this.children[1], "tr", offsetX, offsetY);
+        if(this.children.length > 2)
+          this.drawChild(this.children[2], "bl", offsetX, offsetY);
+        if(this.children.length > 3)
+          this.drawChild(this.children[3], "br", offsetX, offsetY);
+      }
     }
     
     drawChild(child, corner, offsetX, offsetY)
@@ -230,7 +288,7 @@
   ctx = c.getContext("2d");
     
   var startMaxDiff = 128; // 128+64+32+16+8+4+2+1 < 255, då den halveras för varje nivå av barn. (men se nedan)
-  var diminisher = 0.8;   // Hur mycket maxdiffen minskar med för varje nivå.
+  var diminisher = 0.7;   // Hur mycket maxdiffen minskar med för varje nivå.
   var topMap = new Map(2, startMaxDiff, "", null);
   
   // Endast till för att skapa skroten efterhand, en Map per loop. 
@@ -276,7 +334,7 @@
           childCreationCorner = "keep making children!";
           break;
         default:
-          topMap.childrenMakeChildren(5);
+          topMap.childrenMakeChildren(7);
           break;
       }
       
